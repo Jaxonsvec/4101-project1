@@ -1,5 +1,5 @@
 """Recursive-descent parser for the project's simplified Scheme grammar."""
-from nodes import BoolLit, Cons, FALSE, Ident, IntLit, NIL, StringLit, make_cons
+from nodes import BoolLit, Ident, IntLit, NIL, StringLit, make_cons
 
 
 class ParseError(Exception):
@@ -7,52 +7,60 @@ class ParseError(Exception):
 
 
 class Parser:
-    def __init__(self, tokens):
-        self.tokens = tokens
-        self.position = 0
+    def __init__(self, scanner):
+        self.scanner = scanner
+        self._pending = None
 
     @property
     def lookahead(self):
-        return self.tokens[self.position]
+        if self._pending is None:
+            self._pending = self.scanner.getNextToken()
+        return self._pending
 
     def take(self, expected=None):
-        token = self.lookahead
+        token = self._pending
+        if token is None:
+            token = self.scanner.getNextToken()
         if expected is not None and token.type != expected:
-            self.error(f"expected {expected}, found {token.type}")
-        self.position += 1
+            self.error(f"expected {expected}, found {token.type}", token)
+        self._pending = None
         return token
 
-    def error(self, message):
-        t = self.lookahead
+    def error(self, message, token=None):
+        t = token if token is not None else self.lookahead
         raise ParseError(f"line {t.line}, column {t.column}: {message}")
 
     def parse_program(self):
         expressions = []
-        while self.lookahead.type != "EOF":
-            expressions.append(self.parse_exp())
+        while True:
+            expression = self.parse_exp()
+            if expression is None:
+                break
+            expressions.append(expression)
         return expressions
 
-    def parse_exp(self):
-        token = self.lookahead
+    def parse_exp(self, allow_eof=True):
+        """Read an expression without fetching any token after it.
+
+        None marks EOF between top-level expressions; EOF inside an
+        expression is a syntax error.
+        """
+        token = self.take()
+        if token.type == "EOF" and allow_eof:
+            return None
         if token.type == "LPAREN":
-            self.take()
             return self.parse_rest()
         if token.type == "BOOLEAN":
-            self.take()
             return BoolLit(token.value == "#t")
         if token.type == "INTEGER":
-            self.take()
             return IntLit(token.value)
         if token.type == "STRING":
-            self.take()
             return StringLit(token.value)
         if token.type == "IDENTIFIER":
-            self.take()
             return Ident(token.value)
         if token.type == "QUOTE":
-            self.take()
-            return make_cons(Ident("quote"), make_cons(self.parse_exp(), NIL))
-        self.error(f"expected expression, found {token.type}")
+            return make_cons(Ident("quote"), make_cons(self.parse_exp(False), NIL))
+        self.error(f"expected expression, found {token.type}", token)
 
     def parse_rest(self):
         if self.lookahead.type == "RPAREN":
@@ -60,17 +68,17 @@ class Parser:
             return NIL
         if self.lookahead.type in ("EOF", "DOT"):
             self.error("list must start with an expression")
-        items = [self.parse_exp()]
+        items = [self.parse_exp(False)]
         while self.lookahead.type not in ("DOT", "RPAREN"):
             if self.lookahead.type == "EOF":
                 self.error("unterminated list")
-            items.append(self.parse_exp())
+            items.append(self.parse_exp(False))
         tail = NIL
         if self.lookahead.type == "DOT":
-            dot = self.take()
+            self.take()
             if self.lookahead.type in ("RPAREN", "EOF", "DOT"):
                 self.error("dot must be followed by exactly one expression")
-            tail = self.parse_exp()
+            tail = self.parse_exp(False)
             if self.lookahead.type != "RPAREN":
                 self.error("dotted list must have one expression after the dot")
         self.take("RPAREN")

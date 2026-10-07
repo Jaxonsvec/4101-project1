@@ -72,9 +72,9 @@ class _MultilineSpecial(Special):
             return "(" + keyword + "\n" + " " * indent + ")"
         result = "(" + keyword
         for item in items[1:]:
-            result += "\n" + " " * (indent + 2) + item.print(indent + 2)
+            result += "\n" + " " * (indent + 2) + item.print(indent + 2, force_regular=True)
         if tail is not NIL:
-            result += "\n" + " " * (indent + 2) + ". " + tail.print(indent + 2)
+            result += "\n" + " " * (indent + 2) + ". " + tail.print(indent + 2, force_regular=True)
         return result + "\n" + " " * indent + ")"
 
 
@@ -124,7 +124,14 @@ SPECIALS = {
 class Cons(Node):
     def __init__(self, car, cdr, special=None):
         self.car, self.cdr = car, cdr
-        self.special = special or Regular()
+
+        if special is None:
+            special_type = Regular
+            if isinstance(car, Ident):
+                special_type = SPECIALS.get(car.value, Regular)
+            special = special_type()
+
+        self.special = special
 
     def parts(self):
         items, cur = [], self
@@ -153,7 +160,4 @@ FALSE = BoolLit(False)
 
 
 def make_cons(car, cdr):
-    special = Regular()
-    if isinstance(car, Ident):
-        special = SPECIALS.get(car.value, Regular)()
-    return Cons(car, cdr, special)
+    return Cons(car, cdr)

@@ -12,8 +12,8 @@ def main(argv=None):
     args = cli.parse_args(argv)
     source = sys.stdin.read()
     try:
-        tokens = Scanner(source, debug=args.d).tokens()
-        expressions = Parser(tokens).parse_program()
+        scanner = Scanner(source, debug=args.d)
+        expressions = Parser(scanner).parse_program()
     except (ScannerError, ParseError) as exc:
         print(f"SPP: {exc}", file=sys.stderr)
         return 1

@@ -48,6 +48,14 @@ class Scanner:
 
     def tokens(self):
         out = []
+        while True:
+            token = self.getNextToken()
+            out.append(token)
+            if token.type == "EOF":
+                return out
+
+    def getNextToken(self):
+        """Consume and return one token, skipping whitespace and comments."""
         n = len(self.source)
         while self.i < n:
             ch = self.source[self.i]
@@ -64,12 +72,13 @@ class Scanner:
                 if end < n and self._is_identifier_constituent(self.source[end]):
                     raise ScannerError(f"line {line}, column {col}: invalid identifier '...'")
                 self._advance(); self._advance(); self._advance()
-                out.append(Token("IDENTIFIER", "...", line, col))
-                continue
+                self._require_delimiter(line, col)
+                return self._emit("IDENTIFIER", "...", line, col)
             if ch in self.SINGLE:
                 self._advance()
-                out.append(Token(self.SINGLE[ch], ch, line, col))
-                continue
+                if ch == ".":
+                    self._require_delimiter(line, col)
+                return self._emit(self.SINGLE[ch], ch, line, col)
             if ch == '"':
                 self._advance()
                 chars = []
@@ -86,8 +95,7 @@ class Scanner:
                 if self.i >= n:
                     raise ScannerError(f"line {line}, column {col}: unterminated string")
                 self._advance()
-                out.append(Token("STRING", '"' + "".join(chars) + '"', line, col))
-                continue
+                return self._emit("STRING", '"' + "".join(chars) + '"', line, col)
             if ch == "#":
                 spelling = self.source[self.i:self.i + 2].lower()
                 if spelling in ("#t", "#f"):
@@ -95,34 +103,37 @@ class Scanner:
                     if end < n and self.source[end] not in " \t\n\r\f();\"":
                         raise ScannerError(f"line {line}, column {col}: boolean must be followed by a delimiter")
                     self._advance(); self._advance()
-                    out.append(Token("BOOLEAN", spelling, line, col))
-                    continue
+                    return self._emit("BOOLEAN", spelling, line, col)
                 raise ScannerError(f"line {line}, column {col}: invalid boolean or unsupported token")
             if "0" <= ch <= "9":
                 start = self.i
                 while self.i < n and "0" <= self.source[self.i] <= "9":
                     self._advance()
-                out.append(Token("INTEGER", int(self.source[start:self.i]), line, col))
-                continue
+                self._require_delimiter(line, col)
+                return self._emit("INTEGER", int(self.source[start:self.i]), line, col)
             if ch in "+-":
                 self._advance()
                 if self.i < n and self._is_subsequent(self.source[self.i]):
                     raise ScannerError(f"line {line}, column {col}: invalid identifier starting with {ch!r}")
-                out.append(Token("IDENTIFIER", ch, line, col))
-                continue
+                self._require_delimiter(line, col)
+                return self._emit("IDENTIFIER", ch, line, col)
             if self._is_initial(ch):
                 start = self.i
                 self._advance()
                 while self.i < n and self._is_subsequent(self.source[self.i]):
                     self._advance()
                 name = self.source[start:self.i]
-                out.append(Token("IDENTIFIER", name.lower(), line, col))
-                continue
+                self._require_delimiter(line, col)
+                return self._emit("IDENTIFIER", name.lower(), line, col)
             raise ScannerError(f"line {line}, column {col}: unexpected character {ch!r}")
-        out.append(Token("EOF", None, self.line, self.column))
-        if self.debug:
-            print(out[-1], file=sys.stderr)
-        return out
+        return self._emit("EOF", None, self.line, self.column)
+
+    def _require_delimiter(self, line, col):
+        if (
+            self.i < len(self.source)
+            and self.source[self.i] not in " \t\n\r\f();\""
+        ):
+            raise ScannerError(f"line {line}, column {col}: must be followed by a delimiter")
 
     @classmethod
     def _is_initial(cls, c):
